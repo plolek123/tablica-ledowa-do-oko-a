@@ -1,1 +1,1 @@
-# tablica-ledowa-do-oko-a
+# tablica-ledowa-do-okola

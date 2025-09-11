@@ -1,0 +1,124 @@
+#include <SPI.h>
+#include <MD_Parola.h>
+#include <MD_MAX72XX.h>
+
+//
+// RELAY + BUTTON CONFIGURATION
+//
+#define RELAY_COUNT      8
+const int relayPins[RELAY_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9};
+#define BUTTON_PIN       A0
+const bool RELAY_ACTIVE_LOW = true;
+const unsigned long interval = 300;  // ms between random changes
+
+bool isRunning       = false;
+bool lastButtonState = HIGH;
+unsigned long lastChangeTime = 0;
+
+//
+// DISPLAY CONFIGURATION
+//
+#define HARDWARE_TYPE    MD_MAX72XX::GENERIC_HW
+#define MAX_DEVICES      9
+#define CS_PIN           10
+
+MD_Parola display(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
+
+// 8×8 smiley bitmap
+uint8_t smiley[8] = {
+  B00111100,
+  B01000010,
+  B10100101,
+  B10000001,
+  B10100101,
+  B10011001,
+  B01000010,
+  B00111100
+};
+
+//
+// HELPER FUNCTIONS
+//
+int relayOn()  { return RELAY_ACTIVE_LOW ? LOW  : HIGH; }
+int relayOff() { return RELAY_ACTIVE_LOW ? HIGH : LOW; }
+
+// Draw the 8×8 bitmap across all chained modules
+void showBitmap(uint8_t *bitmap) {
+  display.displayClear();
+  for (uint8_t col = 0; col < 8; col++) {
+    for (uint8_t row = 0; row < 8; row++) {
+      bool pixel = bitRead(bitmap[row], 7 - col);
+      for (uint8_t mod = 0; mod < MAX_DEVICES; mod++) {
+        display.setPixel(mod * 8 + col, row, pixel);
+      }
+    }
+  }
+  delay(1500);
+}
+
+// Blocking text animation
+void showText(const char* text,
+              textPosition_t align   = PA_CENTER,
+              uint16_t speed         = 100,
+              uint16_t pause         = 1000,
+              textEffect_t inEffect  = PA_SCROLL_DOWN,
+              textEffect_t outEffect = PA_SCROLL_UP) {
+  display.displayText(text, align, speed, pause, inEffect, outEffect);
+  while (!display.displayAnimate()) { }
+}
+
+void setup() {
+  // ——— Relays & Button ———
+  randomSeed(analogRead(0));
+  for (int i = 0; i < RELAY_COUNT; i++) {
+    pinMode(relayPins[i], OUTPUT);
+    digitalWrite(relayPins[i], relayOff());
+  }
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  // ——— Matrix Display ———
+  display.begin();
+  display.setIntensity(5);
+  display.displayClear();
+  display.setTextAlignment(PA_CENTER);
+
+  // ——— Intro Sequence ———
+  showText("TECHNIKUM",      PA_CENTER, 100, 1000, PA_SCROLL_DOWN, PA_SCROLL_UP);
+  showText("ENERGETYCZNE",    PA_LEFT,   80,  0,    PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  showBitmap(smiley);
+  showText("ZAWODY:",         PA_CENTER, 80, 1500, PA_SCROLL_DOWN, PA_SCROLL_UP);
+  showText("TECHNIK ELEKTRONIK", PA_LEFT, 80, 1500, PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  showText("TECHNIK ELEKTRYK",    PA_LEFT, 80, 1500, PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  showText("TECHNIK ENERGETYK",   PA_LEFT, 80, 1500, PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  showText("TECHNIK AUTOMATYK",   PA_LEFT, 80, 1500, PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  showBitmap(smiley);
+}
+
+void loop() {
+  // ——— Button: toggle running state ———
+  bool currentState = digitalRead(BUTTON_PIN);
+  if (lastButtonState == HIGH && currentState == LOW) {
+    isRunning = !isRunning;
+    if (isRunning) {
+      showText("START", PA_CENTER, 100, 1000, PA_SCROLL_DOWN, PA_SCROLL_UP);
+    } else {
+      showText("STOP", PA_CENTER, 100, 1000, PA_SCROLL_DOWN, PA_SCROLL_UP);
+      // Turn all relays off
+      for (int i = 0; i < RELAY_COUNT; i++) {
+        digitalWrite(relayPins[i], relayOff());
+      }
+    }
+  }
+  lastButtonState = currentState;
+
+  // ——— When running: randomize relays every interval ———
+  if (isRunning && (millis() - lastChangeTime >= interval)) {
+    lastChangeTime = millis();
+    for (int i = 0; i < RELAY_COUNT; i++) {
+      bool state = random(0, 2);
+      digitalWrite(relayPins[i], state ? relayOn() : relayOff());
+    }
+  }
+
+  delay(20);  // simple debounce
+}
